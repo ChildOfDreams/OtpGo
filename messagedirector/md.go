@@ -97,13 +97,11 @@ func (m *MessageDirector) getDatagramFromQueue() QueueEntryElement {
 	defer m.queueLock.Unlock()
 
 	var entry QueueEntry
-	var entryElements []QueueEntryElement
 	entryHasElements := false
 	
 	for !entryHasElements {
 		entry = MD.Queue[0]
-		entryElements = entry.entryElements
-		entryHasElements = len(entryElements) > 0
+		entryHasElements = len(entry.entryElements) > 0
 		if !entryHasElements {
 			// If, at this point, the entry has no more elements within it, we can remove it.
 			// We do this now because we want to keep the entry around for a brief window, so anything that needs it can append to it and be processed first.
@@ -116,10 +114,8 @@ func (m *MessageDirector) getDatagramFromQueue() QueueEntryElement {
 		} 
 	}
 
-	obj := entryElements[0]
-	entryElements[0] = QueueEntryElement{}
-	entryElements = entryElements[1:]
-	entry.entryElements = entryElements
+	obj := entry.entryElements[0]
+	entry.entryElements = entry.entryElements[1:]
 
 	return obj
 }
