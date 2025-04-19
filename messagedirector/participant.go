@@ -96,7 +96,7 @@ func (m *MDParticipantBase) RouteDatagramEarly(datagram Datagram) {
 
 func (m *MDParticipantBase) PostRemove() {
 	for _, dg := range m.postRemoves {
-		m.RouteDatagramEarly(dg)
+		m.RouteDatagram(dg)
 	}
 
 	MD.RecallPostRemoves()
@@ -235,7 +235,7 @@ func (m *MDNetworkParticipant) ReceiveDatagram(dg Datagram) {
 		return
 	}
 
-	m.RouteDatagramEarly(dg)
+	m.RouteDatagram(dg)
 	m.mu.Unlock()
 }
 
