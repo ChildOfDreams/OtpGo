@@ -13,9 +13,15 @@ import (
 	"github.com/apex/log"
 )
 
-type QueueEntry struct {
+// QueueEntryElement is a struct containing a datagram and a message director participant.
+type QueueEntryElement struct {
 	dg Datagram
 	md MDParticipant
+}
+
+// QueueEntry is a struct containing a slice of QueueEntryElements. This is used to store datagrams from the same flow together so they can be processed as early as possible.
+type QueueEntry struct {
+	entryElements []QueueEntryElement
 }
 
 var MDLog *log.Entry
@@ -86,17 +92,35 @@ func Start() {
 	}
 }
 
-func (m *MessageDirector) getDatagramFromQueue() QueueEntry {
+func (m *MessageDirector) getDatagramFromQueue() QueueEntryElement {
 	m.queueLock.Lock()
 	defer m.queueLock.Unlock()
 
-	obj := MD.Queue[0]
-	MD.Queue[0] = QueueEntry{}
-	MD.Queue = MD.Queue[1:]
-	if len(MD.Queue) == 0 {
-		// Recreate the queue slice. This prevents the capacity from growing indefinitely and allows old entries to drop off as soon as possible from the backing array.
-		MD.Queue = make([]QueueEntry, 0)
+	var entry QueueEntry
+	var entryElements []QueueEntryElement
+	entryHasElements := false
+	
+	for !entryHasElements {
+		entry = MD.Queue[0]
+		entryElements = entry.entryElements
+		entryHasElements = len(entryElements) > 0
+		if !entryHasElements {
+			// If, at this point, the entry has no more elements within it, we can remove it.
+			// We do this now because we want to keep the entry around for a brief window, so anything that needs it can append to it and be processed first.
+			MD.Queue[0] = QueueEntry{}
+			MD.Queue = MD.Queue[1:]
+			if len(MD.Queue) == 0 {
+				// Recreate the queue slice. This prevents the capacity from growing indefinitely and allows old entries to drop off as soon as possible from the backing array.
+				MD.Queue = make([]QueueEntry, 0)
+			}
+		} 
 	}
+
+	obj := entryElements[0]
+	entryElements[0] = QueueEntryElement{}
+	entryElements = entryElements[1:]
+	entry.entryElements = entryElements
+
 	return obj
 }
 

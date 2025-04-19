@@ -14,6 +14,8 @@ type MDParticipant interface {
 
 	// RouteDatagram routes a datagram through the MD
 	RouteDatagram(Datagram)
+	// RouteDatagramEarly routes a datagram as soon as possible through the MD
+	RouteDatagramEarly(Datagram)
 
 	SubscribeChannel(Channel_t)
 	UnsubscribeChannel(Channel_t)
@@ -52,9 +54,38 @@ func (m *MDParticipantBase) Subscriber() *Subscriber {
 	return m.subscriber
 }
 
+
+func (m *MDParticipantBase) CreateQueueElementSlice(datagram Datagram) []QueueEntryElement {
+	entryElement := QueueEntryElement{datagram, m}
+	elementSlice := make([]QueueEntryElement, 0)
+	elementSlice = append(elementSlice, entryElement)
+	return elementSlice
+}
+
+// RouteDatagram creates a new slice of MD queue entry elements, assigns it to a queue entry, and then adds the entry to the MD queue.
 func (m *MDParticipantBase) RouteDatagram(datagram Datagram) {
 	MD.queueLock.Lock()
-	MD.Queue = append(MD.Queue, QueueEntry{datagram, m})
+	MD.Queue = append(MD.Queue, QueueEntry{m.CreateQueueElementSlice(datagram)})
+	MD.queueLock.Unlock()
+
+	select {
+	case MD.shouldProcess <- true:
+	default:
+	}
+}
+
+
+// RouteDatagramEarly appends the datagram and MD participant to the first entry in the MD's queue.
+// If there's no entries in the MD queue, it will create a new entry and append the element to the queue.
+// This is mainly to allow datagrams within the same flow to be processed together.
+func (m *MDParticipantBase) RouteDatagramEarly(datagram Datagram) {
+	MD.queueLock.Lock()
+	if len(MD.Queue) == 0 {
+		MD.Queue = append(MD.Queue, QueueEntry{m.CreateQueueElementSlice(datagram)})
+	} else {
+		entryElement := QueueEntryElement{datagram, m}
+		MD.Queue[0].entryElements = append(MD.Queue[0].entryElements, entryElement)
+	}
 	MD.queueLock.Unlock()
 
 	select {
@@ -65,7 +96,7 @@ func (m *MDParticipantBase) RouteDatagram(datagram Datagram) {
 
 func (m *MDParticipantBase) PostRemove() {
 	for _, dg := range m.postRemoves {
-		m.RouteDatagram(dg)
+		m.RouteDatagramEarly(dg)
 	}
 
 	MD.RecallPostRemoves()
@@ -204,7 +235,7 @@ func (m *MDNetworkParticipant) ReceiveDatagram(dg Datagram) {
 		return
 	}
 
-	m.RouteDatagram(dg)
+	m.RouteDatagramEarly(dg)
 	m.mu.Unlock()
 }
 
